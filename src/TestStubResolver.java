@@ -12,44 +12,42 @@ import java.net.InetAddress;
 
 public class TestStubResolver {
 
-    public static void main(String[] args) {
-	try {
-	    StubResolver r = new StubResolver();
+	public static void main(String[] args) {
+		try {
+			StubResolver resolver = new StubResolver();
+			resolver.setNameServer(InetAddress.getByName("1.1.1.1"), 53);
 
-	    // Set the Cloudflare public DNS name server
-	    byte[] cloudflarePublic = new byte[]{1,1,1,1};
-	    r.setNameServer(InetAddress.getByAddress(cloudflarePublic), 53);
+			String domain = "moodle4.city.ac.uk";
+			InetAddress address = resolver.recursiveResolveAddress(domain);
+			InetAddress i = resolver.recursiveResolveAddress("moodle4-vip.city.ac.uk.");
+			if (i == null) {
+				System.out.println("moodle4-vip.city.ac.uk. does have an A record?");
+			} else {
+				System.out.println("moodle4-vip.city.ac.uk.\tA\t" + i.toString() );
+			}
 
-	    // Try to look up some records
-	    InetAddress i = r.recursiveResolveAddress("moodle4-vip.city.ac.uk.");
-	    if (i == null) {
-		System.out.println("moodle4-vip.city.ac.uk. does have an A record?");
-	    } else {
-		System.out.println("moodle4-vip.city.ac.uk.\tA\t" + i.toString() );
-	    }
+			String txt = resolver.recursiveResolveText("city.ac.uk.");
+			if (txt == null) {
+				System.out.println("city.ac.uk. does have TXT records?");
+			} else {
+				System.out.println("moodle4-vip.city.ac.uk.\tTXT\t" + txt );
+			}
 
-	    String txt = r.recursiveResolveText("city.ac.uk.");
-	    if (txt == null) {
-		System.out.println("city.ac.uk. does have TXT records?");
-	    } else {
-		System.out.println("moodle4-vip.city.ac.uk.\tTXT\t" + txt );
-	    }
-	    
+			String cname = resolver.recursiveResolveName(domain, 5);
+			System.out.println(domain + " CNAME " + (cname != null ? cname : "Not found"));
 
-	    String cn = r.recursiveResolveName("moodle4.city.ac.uk.", 5);
-	    if (cn == null) {
-		System.out.println("moodle4.city.ac.uk. should be a CNAME?");
-	    } else {
-		System.out.println("moodle4.city.ac.uk.\tCNAME\t" + cn);
-	    }
+			String ns = resolver.recursiveResolveNS("city.ac.uk");
+			System.out.println("city.ac.uk NS " + (ns != null ? ns : "Not avaliable"));
 
-	    
-	} catch (Exception e) {
-	    System.out.println("Exception caught");
-	    e.printStackTrace();
+			String mx = resolver.recursiveResolveMX("city.ac.uk");
+			System.out.println("city.ac.uk MX " + (mx != null ? mx : "Not found"));
+
+		} catch (Exception e) {
+			System.out.println("Exception caught");
+			e.printStackTrace();
+		}
+
+		return;
 	}
-
-	return;
-    }
 }
 // DO NOT EDIT ends

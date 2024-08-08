@@ -7,7 +7,7 @@ import java.util.Random;
 // IN2011 Computer Networks
 // Coursework 2023/2024 Resit
 // Submission by
-//Tenzin Norbu
+// Tenzin Norbu
 // 220052955
 // Tenzin.norbu@city.ac.uk
 
@@ -18,6 +18,8 @@ interface StubResolverInterface {
     public InetAddress recursiveResolveAddress(String domainName) throws Exception;
     public String recursiveResolveText(String domainName) throws Exception;
     public String recursiveResolveName(String domainName, int type) throws Exception;
+    public String recursiveResolveNS(String domainName) throws Exception;
+    public String recursiveResolveMX(String domainName) throws Exception;
 }
 // DO NOT EDIT ends
 
@@ -52,6 +54,22 @@ public class StubResolver implements StubResolverInterface {
             return null;
         }
         return extractName(response);
+    }
+
+    public String recursiveResolveNS(String domainName) throws Exception {
+        byte[] response = performQuery(domainName, 2); // NS record type
+        if (response == null) {
+            return null;
+        }
+        return extractNS(response);
+    }
+
+    public String recursiveResolveMX(String domainName) throws Exception {
+        byte[] response = performQuery(domainName, 15); // MX record type
+        if (response == null) {
+            return null;
+        }
+        return extractMX(response);
     }
 
     private byte[] performQuery(String domainName, int queryType) throws Exception {
@@ -102,6 +120,7 @@ public class StubResolver implements StubResolverInterface {
 
         return buffer.array();
     }
+
     private void skipName(ByteBuffer buffer) {
         int len;
         while ((len = buffer.get() & 0xFF) != 0) {
@@ -113,7 +132,6 @@ public class StubResolver implements StubResolverInterface {
             }
         }
     }
-
 
     private InetAddress extractAddress(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
@@ -149,8 +167,51 @@ public class StubResolver implements StubResolverInterface {
 
         return null;
     }
-
     private String extractText(byte[] response) throws Exception {
+        ByteBuffer buffer = ByteBuffer.wrap(response);
+        buffer.position(4); // Skip Transaction ID, Flags
+        int questionCount = buffer.getShort() & 0xFFFF;
+        int answerCount = buffer.getShort() & 0xFFFF;
+
+        // Skip Authority RRs and Additional RRs counts
+        buffer.position(buffer.position() + 4);
+
+        // Skip questions
+        for (int i = 0; i < questionCount; i++) {
+            skipName(buffer);
+            buffer.position(buffer.position() + 4); // Skip QTYPE and QCLASS
+        }
+
+        // Process answers
+        for (int i = 0; i < answerCount; i++) {
+            skipName(buffer);
+            int recordType = buffer.getShort() & 0xFFFF;
+            buffer.position(buffer.position() + 2); // Skip CLASS
+            buffer.position(buffer.position() + 4); // Skip TTL
+
+            int dataLength = buffer.getShort() & 0xFFFF;
+
+            if (recordType == 16) { // TXT record type
+                StringBuilder txtRecord = new StringBuilder();
+                int txtLength;
+                while (dataLength > 0) {
+                    txtLength = buffer.get() & 0xFF;
+                    byte[] textBytes = new byte[txtLength];
+                    buffer.get(textBytes);
+                    txtRecord.append(new String(textBytes));
+                    dataLength -= (txtLength + 1); // Subtract length of text + 1 byte length field
+                }
+                return txtRecord.toString();
+            } else {
+                buffer.position(buffer.position() + dataLength); // Skip unwanted data
+            }
+        }
+
+        return null;
+    }
+
+
+    private String extractName(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
         buffer.position(4); // Skip Transaction ID, Flags
         int questionCount = buffer.getShort() & 0xFFFF;
@@ -172,44 +233,52 @@ public class StubResolver implements StubResolverInterface {
             buffer.position(buffer.position() + 2); // Skip CLASS
             buffer.position(buffer.position() + 4); // Skip TTL
 
-            int dataLength = buffer.getShort() & 0xFFFF;
-            byte[] textBytes = new byte[dataLength];
-            buffer.get(textBytes);
-
-            return new String(textBytes);
+            int dataLength = buffer.getShort();
+            if (dataLength > 0) {
+                return extractDomainName(buffer);
+            }
         }
 
         return null;
     }
 
+    private String extractNS(byte[] response) throws Exception {
+        return extractNameRecord(response, 2); // Extract NS record specifically
+    }
 
+    private String extractMX(byte[] response) throws Exception {
+        return extractNameRecord(response, 15); // Extract MX record specifically
+    }
 
-
-    private String extractName(byte[] response) throws Exception {
+    private String extractNameRecord(byte[] response, int type) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
-        buffer.position(4); // Skip Transaction ID, Flags
-        int questionCount = buffer.getShort();
-        int answerCount = buffer.getShort();
-
-        // Skip Authority RRs and Additional RRs counts
-        buffer.position(buffer.position() + 4);
+        buffer.position(4); // Skip header
+        int questionCount = buffer.getShort() & 0xFFFF;
+        int answerCount = buffer.getShort() & 0xFFFF;
+        buffer.position(buffer.position() + 4); // Skip Authority and Additional RRs
 
         // Skip questions
         for (int i = 0; i < questionCount; i++) {
-            while (buffer.get() != 0) ; // Skip domain name
+            skipName(buffer);
             buffer.position(buffer.position() + 4); // Skip QTYPE and QCLASS
         }
 
         // Process answers
         for (int i = 0; i < answerCount; i++) {
-            while (buffer.get() != 0) ; // Skip domain name
-            buffer.position(buffer.position() + 1); // Skip TYPE
+            skipName(buffer);
+            int recordType = buffer.getShort() & 0xFFFF;
             buffer.position(buffer.position() + 2); // Skip CLASS
             buffer.position(buffer.position() + 4); // Skip TTL
 
-            int dataLength = buffer.getShort();
-            if (dataLength > 0) {
+            int dataLength = buffer.getShort() & 0xFFFF;
+            if (recordType == type) {
+                if (type == 15) { // MX record has preference before the domain name
+                    buffer.getShort(); // Skip the preference
+                    dataLength -= 2;
+                }
                 return extractDomainName(buffer);
+            } else {
+                buffer.position(buffer.position() + dataLength); // Skip unwanted data
             }
         }
 

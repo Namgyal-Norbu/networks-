@@ -34,7 +34,7 @@ public class Resolver implements ResolverInterface {
     public InetAddress iterativeResolveAddress(String domainName) throws Exception {
         byte[] response = performIterativeQuery(domainName, 1); // A record type
         if (response == null) {
-            return null;
+            throw new Exception("Domain name not found");
         }
         return extractAddress(response);
     }
@@ -42,7 +42,7 @@ public class Resolver implements ResolverInterface {
     public String iterativeResolveText(String domainName) throws Exception {
         byte[] response = performIterativeQuery(domainName, 16); // TXT record type
         if (response == null) {
-            return null;
+            throw new Exception("TXT record not found");
         }
         return extractText(response);
     }
@@ -50,7 +50,7 @@ public class Resolver implements ResolverInterface {
     public String iterativeResolveName(String domainName, int type) throws Exception {
         byte[] response = performIterativeQuery(domainName, type);
         if (response == null) {
-            return null;
+            throw new Exception("Domain name not found");
         }
         return extractName(response);
     }
@@ -141,14 +141,18 @@ public class Resolver implements ResolverInterface {
             buffer.position(buffer.position() + 12 * answerCount); // Skip answers
 
             for (int i = 0; i < authorityCount; i++) {
-                while (buffer.get() != 0) ; // Skip domain name
-                buffer.position(buffer.position() + 10); // Skip type, class, TTL
+                skipName(buffer);
+                buffer.position(buffer.position() + 2); // Skip type
+                buffer.position(buffer.position() + 2); // Skip class
+                buffer.position(buffer.position() + 4); // Skip TTL
 
-                int dataLength = buffer.getShort();
+                int dataLength = buffer.getShort() & 0xFFFF;
                 byte[] addressBytes = new byte[dataLength];
                 buffer.get(addressBytes);
 
-                return InetAddress.getByAddress(addressBytes);
+                if (dataLength == 4) { // IPv4 address
+                    return InetAddress.getByAddress(addressBytes);
+                }
             }
         }
 
@@ -157,75 +161,146 @@ public class Resolver implements ResolverInterface {
 
     private InetAddress extractAddress(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
-        buffer.position(6); // Skip header
-        int answerCount = buffer.getShort();
+        buffer.position(4); // Skip Transaction ID, Flags
+        int questionCount = buffer.getShort() & 0xFFFF;
+        int answerCount = buffer.getShort() & 0xFFFF;
+
+        // Skip Authority RRs and Additional RRs counts
+        buffer.position(buffer.position() + 4);
 
         // Skip questions
-        while (buffer.get() != 0) ;
-        buffer.position(buffer.position() + 4);
+        for (int i = 0; i < questionCount; i++) {
+            skipName(buffer);
+            buffer.position(buffer.position() + 4); // Skip QTYPE and QCLASS
+        }
 
         // Process answers
         for (int i = 0; i < answerCount; i++) {
-            while (buffer.get() != 0) ;
-            buffer.position(buffer.position() + 10); // Skip type, class, TTL
+            skipName(buffer);
+            buffer.position(buffer.position() + 2); // Skip TYPE
+            buffer.position(buffer.position() + 2); // Skip CLASS
+            buffer.position(buffer.position() + 4); // Skip TTL
 
-            int dataLength = buffer.getShort();
-            byte[] addressBytes = new byte[dataLength];
-            buffer.get(addressBytes);
-
+            int dataLength = buffer.getShort() & 0xFFFF;
             if (dataLength == 4) { // IPv4 address
+                byte[] addressBytes = new byte[dataLength];
+                buffer.get(addressBytes);
                 return InetAddress.getByAddress(addressBytes);
+            } else {
+                buffer.position(buffer.position() + dataLength); // Skip data if not IPv4
             }
         }
 
         return null;
     }
 
+    private void skipName(ByteBuffer buffer) {
+        int len;
+        while ((len = buffer.get() & 0xFF) != 0) {
+            if ((len & 0xC0) == 0xC0) { // Name compression
+                buffer.get(); // Skip the next byte as the compression pointer
+                return;
+            } else {
+                buffer.position(buffer.position() + len);
+            }
+        }
+    }
+
     private String extractText(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
-        buffer.position(6); // Skip header
-        int answerCount = buffer.getShort();
+        buffer.position(4); // Skip Transaction ID, Flags
+        int questionCount = buffer.getShort() & 0xFFFF;
+        int answerCount = buffer.getShort() & 0xFFFF;
+
+        // Skip Authority RRs and Additional RRs counts
+        buffer.position(buffer.position() + 4);
 
         // Skip questions
-        while (buffer.get() != 0) ;
-        buffer.position(buffer.position() + 4);
+        for (int i = 0; i < questionCount; i++) {
+            skipName(buffer);
+            buffer.position(buffer.position() + 4); // Skip QTYPE and QCLASS
+        }
 
         // Process answers
         for (int i = 0; i < answerCount; i++) {
-            while (buffer.get() != 0) ;
-            buffer.position(buffer.position() + 10); // Skip type, class, TTL
+            skipName(buffer);
+            buffer.position(buffer.position() + 2); // Skip TYPE
+            buffer.position(buffer.position() + 2); // Skip CLASS
+            buffer.position(buffer.position() + 4); // Skip TTL
 
-            int dataLength = buffer.getShort();
+            int dataLength = buffer.getShort() & 0xFFFF;
             byte[] textBytes = new byte[dataLength];
             buffer.get(textBytes);
 
-            return new String(textBytes);
+            // Assuming the TXT record can contain multiple strings
+            ByteBuffer txtBuffer = ByteBuffer.wrap(textBytes);
+            StringBuilder txtRecord = new StringBuilder();
+            while (txtBuffer.remaining() > 0) {
+                int len = txtBuffer.get() & 0xFF;
+                byte[] strBytes = new byte[len];
+                txtBuffer.get(strBytes);
+                txtRecord.append(new String(strBytes));
+            }
+
+            return txtRecord.toString();
         }
 
-        return null;
+        return "TXT record not found";
     }
 
     private String extractName(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
-        buffer.position(6); // Skip header
-        int answerCount = buffer.getShort();
+        buffer.position(4); // Skip Transaction ID, Flags
+        int questionCount = buffer.getShort() & 0xFFFF;
+        int answerCount = buffer.getShort() & 0xFFFF;
+
+        // Skip Authority RRs and Additional RRs counts
+        buffer.position(buffer.position() + 4);
 
         // Skip questions
-        while (buffer.get() != 0) ;
-        buffer.position(buffer.position() + 4);
+        for (int i = 0; i < questionCount; i++) {
+            skipName(buffer);
+            buffer.position(buffer.position() + 4); // Skip QTYPE and QCLASS
+        }
 
         // Process answers
         for (int i = 0; i < answerCount; i++) {
-            while (buffer.get() != 0) ;
-            buffer.position(buffer.position() + 10); // Skip type, class, TTL
+            skipName(buffer);
+            int recordType = buffer.getShort() & 0xFFFF;
+            buffer.position(buffer.position() + 2); // Skip CLASS
+            buffer.position(buffer.position() + 4); // Skip TTL
 
-            int dataLength = buffer.getShort();
-            byte[] nameBytes = new byte[dataLength];
-            buffer.get(nameBytes);
-
-            return new String(nameBytes);
+            int dataLength = buffer.getShort() & 0xFFFF;
+            if (recordType == 5) { // CNAME record
+                return extractDomainName(buffer);
+            } else {
+                buffer.position(buffer.position() + dataLength); // Skip other records
+            }
         }
 
-        return null;
+        return "Name not found";
+    }
+
+    private String extractDomainName(ByteBuffer buffer) {
+        StringBuilder domainName = new StringBuilder();
+        int length;
+        while ((length = buffer.get() & 0xFF) > 0) {
+            if ((length & 0xC0) == 0xC0) {
+                // This is a pointer
+                int pointer = ((length & 0x3F) << 8) | (buffer.get() & 0xFF);
+                ByteBuffer pointerBuffer = ByteBuffer.wrap(buffer.array());
+                pointerBuffer.position(pointer);
+                domainName.append(extractDomainName(pointerBuffer));
+                break;
+            } else {
+                byte[] labelBytes = new byte[length];
+                buffer.get(labelBytes);
+                domainName.append(new String(labelBytes)).append('.');
+            }
+        }
+        if (domainName.length() > 0 && domainName.charAt(domainName.length() - 1) == '.') {
+            domainName.setLength(domainName.length() - 1); // Remove the trailing dot
+        }
+        return domainName.toString();
     }
 }
