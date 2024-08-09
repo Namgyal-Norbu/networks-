@@ -146,6 +146,7 @@ public class StubResolver implements StubResolverInterface {
     private InetAddress extractAddress(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
         buffer.position(4); // Skip Transaction ID, Flags
+
         int questionCount = buffer.getShort() & 0xFFFF;
         int answerCount = buffer.getShort() & 0xFFFF;
 
@@ -162,19 +163,22 @@ public class StubResolver implements StubResolverInterface {
         for (int i = 0; i < answerCount; i++) {
             skipName(buffer);
 
-            System.out.println("Before setting position: position=" + buffer.position() + ", limit=" + buffer.limit() + ", remaining=" + buffer.remaining());
+            if (buffer.remaining() < 10) { // Check for remaining bytes before skipping TYPE, CLASS, TTL
+                throw new Exception("Buffer underflow before TYPE/CLASS/TTL: remaining=" + buffer.remaining());
+            }
 
             buffer.position(buffer.position() + 2); // Skip TYPE
             buffer.position(buffer.position() + 2); // Skip CLASS
             buffer.position(buffer.position() + 4); // Skip TTL
 
+            if (buffer.remaining() < 2) { // Check if there are enough bytes to read dataLength
+                throw new Exception("Buffer underflow before reading data length: remaining=" + buffer.remaining());
+            }
+
             int dataLength = buffer.getShort() & 0xFFFF;
 
-            System.out.println("After reading data length: position=" + buffer.position() + ", limit=" + buffer.limit() + ", remaining=" + buffer.remaining());
-
-            // Check if the dataLength is valid and the buffer has enough remaining bytes
-            if (dataLength < 0 || buffer.remaining() < dataLength) {
-                throw new Exception("Invalid data length or buffer underflow: dataLength=" + dataLength + ", remaining=" + buffer.remaining());
+            if (buffer.remaining() < dataLength) { // Check if there are enough bytes to read the actual data
+                throw new Exception("Buffer underflow when reading data: dataLength=" + dataLength + ", remaining=" + buffer.remaining());
             }
 
             if (dataLength == 4) { // IPv4 address
