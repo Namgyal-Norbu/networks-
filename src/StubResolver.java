@@ -161,11 +161,18 @@ public class StubResolver implements StubResolverInterface {
         // Process answers
         for (int i = 0; i < answerCount; i++) {
             skipName(buffer);
+
+            // Debugging: Print current buffer state
+            System.out.println("Before setting position: position=" + buffer.position() + ", limit=" + buffer.limit() + ", remaining=" + buffer.remaining());
+
             buffer.position(buffer.position() + 2); // Skip TYPE
             buffer.position(buffer.position() + 2); // Skip CLASS
             buffer.position(buffer.position() + 4); // Skip TTL
 
             int dataLength = buffer.getShort() & 0xFFFF;
+
+            // Debugging: Print current buffer state after reading data length
+            System.out.println("After reading data length: position=" + buffer.position() + ", limit=" + buffer.limit() + ", remaining=" + buffer.remaining());
 
             // Check if buffer has enough remaining bytes
             if (buffer.remaining() < dataLength) {
@@ -183,6 +190,7 @@ public class StubResolver implements StubResolverInterface {
 
         return null;
     }
+
 
     private String extractText(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
