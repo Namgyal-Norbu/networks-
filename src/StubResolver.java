@@ -76,7 +76,8 @@ public class StubResolver implements StubResolverInterface {
     private byte[] performQuery(String domainName, int queryType) throws Exception {
         byte[] query = buildQuery(domainName, queryType);
         DatagramSocket socket = new DatagramSocket();
-        socket.setSoTimeout(10000);  // Set timeout to 10 seconds
+        socket.setSoTimeout(20000);  // Set timeout to 20 seconds
+
 
         DatagramPacket packet = new DatagramPacket(query, query.length, dnsServer, dnsPort);
         socket.send(packet);
