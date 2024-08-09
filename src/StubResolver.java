@@ -1,6 +1,7 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.Random;
 
@@ -75,14 +76,23 @@ public class StubResolver implements StubResolverInterface {
     private byte[] performQuery(String domainName, int queryType) throws Exception {
         byte[] query = buildQuery(domainName, queryType);
         DatagramSocket socket = new DatagramSocket();
+        socket.setSoTimeout(10000); // Set timeout to 10 seconds
+
         DatagramPacket packet = new DatagramPacket(query, query.length, dnsServer, dnsPort);
         socket.send(packet);
 
         byte[] buffer = new byte[512];
         DatagramPacket response = new DatagramPacket(buffer, buffer.length);
-        socket.receive(response);
 
-        socket.close();
+        try {
+            socket.receive(response);
+        } catch (SocketTimeoutException e) {
+            System.out.println("Timeout reached while waiting for response");
+            return new byte[0];
+        } finally {
+            socket.close();
+        }
+
         return response.getData();
     }
 
