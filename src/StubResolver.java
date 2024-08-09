@@ -162,7 +162,6 @@ public class StubResolver implements StubResolverInterface {
         for (int i = 0; i < answerCount; i++) {
             skipName(buffer);
 
-            // Debugging: Print current buffer state
             System.out.println("Before setting position: position=" + buffer.position() + ", limit=" + buffer.limit() + ", remaining=" + buffer.remaining());
 
             buffer.position(buffer.position() + 2); // Skip TYPE
@@ -171,12 +170,11 @@ public class StubResolver implements StubResolverInterface {
 
             int dataLength = buffer.getShort() & 0xFFFF;
 
-            // Debugging: Print current buffer state after reading data length
             System.out.println("After reading data length: position=" + buffer.position() + ", limit=" + buffer.limit() + ", remaining=" + buffer.remaining());
 
-            // Check if buffer has enough remaining bytes
-            if (buffer.remaining() < dataLength) {
-                throw new Exception("Buffer underflow: Not enough data in the buffer for the expected length.");
+            // Check if the dataLength is valid and the buffer has enough remaining bytes
+            if (dataLength < 0 || buffer.remaining() < dataLength) {
+                throw new Exception("Invalid data length or buffer underflow: dataLength=" + dataLength + ", remaining=" + buffer.remaining());
             }
 
             if (dataLength == 4) { // IPv4 address
