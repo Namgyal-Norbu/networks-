@@ -76,7 +76,7 @@ public class StubResolver implements StubResolverInterface {
     private byte[] performQuery(String domainName, int queryType) throws Exception {
         byte[] query = buildQuery(domainName, queryType);
         DatagramSocket socket = new DatagramSocket();
-        socket.setSoTimeout(10000); // Set timeout to 10 seconds
+        socket.setSoTimeout(10000);  // Set timeout to 10 seconds
 
         DatagramPacket packet = new DatagramPacket(query, query.length, dnsServer, dnsPort);
         socket.send(packet);
@@ -88,9 +88,14 @@ public class StubResolver implements StubResolverInterface {
             socket.receive(response);
         } catch (SocketTimeoutException e) {
             System.out.println("Timeout reached while waiting for response");
-            return new byte[0];
-        } finally {
-            socket.close();
+            return null;
+        }
+        socket.close();
+
+        // Ensure the response is not empty
+        if (response.getLength() == 0) {
+            System.out.println("Received empty response");
+            return null;
         }
 
         return response.getData();
@@ -146,7 +151,6 @@ public class StubResolver implements StubResolverInterface {
     private InetAddress extractAddress(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
         buffer.position(4); // Skip Transaction ID, Flags
-
         int questionCount = buffer.getShort() & 0xFFFF;
         int answerCount = buffer.getShort() & 0xFFFF;
 
@@ -162,31 +166,20 @@ public class StubResolver implements StubResolverInterface {
         // Process answers
         for (int i = 0; i < answerCount; i++) {
             skipName(buffer);
-
-            if (buffer.remaining() < 10) { // Check for remaining bytes before skipping TYPE, CLASS, TTL
-                throw new Exception("Buffer underflow before TYPE/CLASS/TTL: remaining=" + buffer.remaining());
-            }
-
             buffer.position(buffer.position() + 2); // Skip TYPE
             buffer.position(buffer.position() + 2); // Skip CLASS
             buffer.position(buffer.position() + 4); // Skip TTL
 
-            if (buffer.remaining() < 2) { // Check if there are enough bytes to read dataLength
-                throw new Exception("Buffer underflow before reading data length: remaining=" + buffer.remaining());
-            }
-
             int dataLength = buffer.getShort() & 0xFFFF;
-
-            if (buffer.remaining() < dataLength) { // Check if there are enough bytes to read the actual data
-                throw new Exception("Buffer underflow when reading data: dataLength=" + dataLength + ", remaining=" + buffer.remaining());
-            }
-
             if (dataLength == 4) { // IPv4 address
                 byte[] addressBytes = new byte[dataLength];
                 buffer.get(addressBytes);
                 return InetAddress.getByAddress(addressBytes);
-            } else {
+            } else if (dataLength > 0) {
                 buffer.position(buffer.position() + dataLength); // Skip data if not IPv4
+            } else {
+                System.out.println("Unexpected data length: " + dataLength);
+                return null;
             }
         }
 
