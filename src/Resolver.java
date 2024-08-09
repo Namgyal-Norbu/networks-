@@ -21,23 +21,21 @@ public class Resolver implements ResolverInterface {
     private static final int MX_RECORD = 15;
     private static final int TXT_RECORD = 16;
 
-    @Override
     public void setNameServer(InetAddress ipAddress, int port) {
         this.nameServerAddress = ipAddress;
         this.nameServerPort = port;
     }
 
-    @Override
     public InetAddress iterativeResolveAddress(String domainName) throws Exception {
         return (InetAddress) iterativeResolve(domainName, A_RECORD);
     }
 
-    @Override
+
     public String iterativeResolveText(String domainName) throws Exception {
         return (String) iterativeResolve(domainName, TXT_RECORD);
     }
 
-    @Override
+
     public String iterativeResolveName(String domainName, int type) throws Exception {
         return (String) iterativeResolve(domainName, type);
     }
@@ -49,6 +47,7 @@ public class Resolver implements ResolverInterface {
 
         while (true) {
             byte[] query = createDNSQuery(domainName, type);
+            System.out.println("Sending query to " + currentNameServer.getHostAddress());
             byte[] response = sendQuery(query, currentNameServer, currentPort);
 
             DNSMessage dnsMessage = new DNSMessage(response);
@@ -111,19 +110,18 @@ public class Resolver implements ResolverInterface {
         byte[] header = new byte[12];
         header[0] = (byte) (id >> 8);
         header[1] = (byte) id;
-        header[2] = 0x01; // Standard query with recursion desired
+        header[2] = 0x01;
         header[3] = 0x00;
-        header[4] = 0x00; // QDCOUNT (1 question)
+        header[4] = 0x00;
         header[5] = 0x01;
-        header[6] = 0x00; // ANCOUNT
+        header[6] = 0x00;
         header[7] = 0x00;
-        header[8] = 0x00; // NSCOUNT
+        header[8] = 0x00;
         header[9] = 0x00;
-        header[10] = 0x00; // ARCOUNT
-        header[11] = 0x00;
+        header[10] = 0x00;
 
         String[] labels = domainName.split("\\.");
-        byte[] question = new byte[domainName.length() + 2 + 4]; // domain name + null label + type and class fields
+        byte[] question = new byte[domainName.length() + 2 + 4];
 
         int pos = 0;
         for (String label : labels) {
@@ -132,10 +130,10 @@ public class Resolver implements ResolverInterface {
                 question[pos++] = (byte) c;
             }
         }
-        question[pos++] = 0; // end of domain name
+        question[pos++] = 0;
         question[pos++] = (byte) (type >> 8);
         question[pos++] = (byte) type;
-        question[pos++] = 0x00; // IN class
+        question[pos++] = 0x00;
         question[pos++] = 0x01;
 
         byte[] query = new byte[header.length + question.length];
@@ -146,13 +144,18 @@ public class Resolver implements ResolverInterface {
 
     private byte[] sendQuery(byte[] query, InetAddress server, int port) throws Exception {
         DatagramSocket socket = new DatagramSocket();
-        socket.setSoTimeout(50000); // Set a timeout to avoid indefinite waits
+        socket.setSoTimeout(5000);
         DatagramPacket packet = new DatagramPacket(query, query.length, server, port);
         socket.send(packet);
 
         byte[] buffer = new byte[512];
         packet = new DatagramPacket(buffer, buffer.length);
-        socket.receive(packet);
+        try {
+            socket.receive(packet);
+        } catch (SocketTimeoutException e) {
+            System.out.println("Timeout reached while waiting for response");
+            return new byte[0];
+        }
         socket.close();
 
         return packet.getData();
@@ -171,10 +174,9 @@ public class Resolver implements ResolverInterface {
             authorityCount = ((data[8] & 0xff) << 8) | (data[9] & 0xff);
             additionalCount = ((data[10] & 0xff) << 8) | (data[11] & 0xff);
 
-            int pos = 12; // skip header
-            while (data[pos] != 0) pos++; // skip question
-            pos += 5; // skip null byte and type/class fields
-
+            int pos = 12;
+            while (data[pos] != 0) pos++;
+            pos += 5;
             for (int i = 0; i < answerCount; i++) {
                 DNSRecord record = DNSRecord.parseRecord(data, pos);
                 answers.add(record);
@@ -211,11 +213,11 @@ public class Resolver implements ResolverInterface {
         }
 
         static DNSRecord parseRecord(byte[] data, int pos) throws Exception {
-            pos += 2; // skip name
+            pos += 2;
             int type = ((data[pos] & 0xff) << 8) | (data[pos + 1] & 0xff);
             pos += 2;
-            pos += 2; // skip class
-            pos += 4; // skip TTL
+            pos += 2;
+            pos += 4;
             int dataLen = ((data[pos] & 0xff) << 8) | (data[pos + 1] & 0xff);
             pos += 2;
             byte[] recordData = Arrays.copyOfRange(data, pos, pos + dataLen);
