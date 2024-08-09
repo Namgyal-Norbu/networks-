@@ -166,6 +166,12 @@ public class StubResolver implements StubResolverInterface {
             buffer.position(buffer.position() + 4); // Skip TTL
 
             int dataLength = buffer.getShort() & 0xFFFF;
+
+            // Check if buffer has enough remaining bytes
+            if (buffer.remaining() < dataLength) {
+                throw new Exception("Buffer underflow: Not enough data in the buffer for the expected length.");
+            }
+
             if (dataLength == 4) { // IPv4 address
                 byte[] addressBytes = new byte[dataLength];
                 buffer.get(addressBytes);
@@ -177,6 +183,7 @@ public class StubResolver implements StubResolverInterface {
 
         return null;
     }
+
     private String extractText(byte[] response) throws Exception {
         ByteBuffer buffer = ByteBuffer.wrap(response);
         buffer.position(4); // Skip Transaction ID, Flags
