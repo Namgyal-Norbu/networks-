@@ -15,7 +15,7 @@ public class TestStubResolver {
 	public static void main(String[] args) {
 		try {
 			StubResolver resolver = new StubResolver();
-			resolver.setNameServer(InetAddress.getByName("8.8.8.8"), 53);
+			resolver.setNameServer(InetAddress.getByName("1.1.1.1"), 53);
 
 			String domain = "moodle4.city.ac.uk";
 			InetAddress address = resolver.recursiveResolveAddress(domain);
