@@ -30,11 +30,9 @@ public class Resolver implements ResolverInterface {
         return (InetAddress) iterativeResolve(domainName, A_RECORD);
     }
 
-
     public String iterativeResolveText(String domainName) throws Exception {
         return (String) iterativeResolve(domainName, TXT_RECORD);
     }
-
 
     public String iterativeResolveName(String domainName, int type) throws Exception {
         return (String) iterativeResolve(domainName, type);
@@ -47,7 +45,6 @@ public class Resolver implements ResolverInterface {
 
         while (true) {
             byte[] query = createDNSQuery(domainName, type);
-            System.out.println("Sending query to " + currentNameServer.getHostAddress());
             byte[] response = sendQuery(query, currentNameServer, currentPort);
 
             DNSMessage dnsMessage = new DNSMessage(response);
@@ -57,9 +54,11 @@ public class Resolver implements ResolverInterface {
                         if (type == A_RECORD) {
                             return InetAddress.getByAddress(record.data);
                         } else if (type == TXT_RECORD) {
-                            return new String(record.data);
+                            // Handle TXT record to avoid length byte
+                            return parseTxtRecord(record.data);
                         } else if (type == MX_RECORD) {
-                            return record.preference + " " + record.name;
+                            // Return only the hostname for MX record
+                            return record.name;
                         } else if (type == CNAME_RECORD || type == NS_RECORD) {
                             return record.name;
                         }
@@ -103,6 +102,20 @@ public class Resolver implements ResolverInterface {
         }
     }
 
+
+    private String parseTxtRecord(byte[] data) {
+        StringBuilder txtRecord = new StringBuilder();
+        int pos = 0;
+        while (pos < data.length) {
+            int length = data[pos] & 0xFF;
+            pos++; // Move past the length byte
+            byte[] textBytes = Arrays.copyOfRange(data, pos, pos + length);
+            txtRecord.append(new String(textBytes));
+            pos += length;
+        }
+        return txtRecord.toString();
+    }
+
     private byte[] createDNSQuery(String domainName, int type) {
         Random random = new Random();
         int id = random.nextInt(0xffff);
@@ -144,7 +157,7 @@ public class Resolver implements ResolverInterface {
 
     private byte[] sendQuery(byte[] query, InetAddress server, int port) throws Exception {
         DatagramSocket socket = new DatagramSocket();
-        socket.setSoTimeout(5000);
+        socket.setSoTimeout(20000);
         DatagramPacket packet = new DatagramPacket(query, query.length, server, port);
         socket.send(packet);
 
@@ -224,15 +237,17 @@ public class Resolver implements ResolverInterface {
 
             String recordName = "";
             int preference = 0;
-            if (type == CNAME_RECORD || type == NS_RECORD || type == MX_RECORD) {
+            if (type == CNAME_RECORD || type == NS_RECORD) {
                 recordName = parseDomainName(data, pos);
-                if (type == MX_RECORD) {
-                    preference = ((recordData[0] & 0xff) << 8) | (recordData[1] & 0xff);
-                }
+            } else if (type == MX_RECORD) {
+                // Parse the MX record: first 2 bytes are the preference, rest is the domain name
+                preference = ((recordData[0] & 0xff) << 8) | (recordData[1] & 0xff);
+                recordName = parseDomainName(data, pos + 2); // domain name starts after the 2-byte preference
             }
 
             return new DNSRecord(type, recordData, recordName, pos + dataLen, preference);
         }
+
 
         static String parseDomainName(byte[] data, int pos) {
             StringBuilder name = new StringBuilder();
