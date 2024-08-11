@@ -20,7 +20,7 @@ public class TestResolver {
 			// Its IP is 198.41.0.4
 			// But Java has bytes as signed so we have to represent
 			// 0xC6 as -58 rather than 198
-			byte[] rootServer = new byte[]{-88, 63, -127, 16};
+			byte[] rootServer = new byte[]{-58, 41, 0, 4};
 			r.setNameServer(InetAddress.getByAddress(rootServer), 53);
 
 			// Try to look up some records
