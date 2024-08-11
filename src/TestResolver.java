@@ -21,7 +21,7 @@ public class TestResolver {
 			// But Java has bytes as signed so we have to represent
 			// 0xC6 as -58 rather than 198
 			byte[] rootServer = new byte[]{-58, 41, 0, 4};
-			r.setNameServer(InetAddress.getByAddress(rootServer), 53);
+			r.setNameServer(InetAddress.getByName("168.63.129.16"), 53);
 
 			// Try to look up some records
 			InetAddress i = r.iterativeResolveAddress("moodle4-vip.city.ac.uk.");
